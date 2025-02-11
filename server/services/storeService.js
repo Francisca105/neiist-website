@@ -30,13 +30,65 @@ const checkVariantAvailability = (productId, size) => {
   return productsDatabase.checkVariantAvailability(productId, size);
 };
 
+const checkProductAvailability = async (productId, size) => {
+  try {
+    const product = await productsDatabase.getProductById(productId);
+
+    if (!product) {
+      throw new Error("Produto não encontrado");
+    }
+
+    // Verificar se o produto ainda está disponível para encomenda
+    if (product.stockType === "onDemand") {
+      const orderDeadline = new Date(product.orderInfo.orderDeadline);
+      const now = new Date();
+
+      if (now > orderDeadline) {
+        throw new Error(
+          `O período de encomenda terminou a ${orderDeadline.toLocaleDateString()}`
+        );
+      }
+    }
+
+    // Verificar disponibilidade do tamanho
+    const isAvailable = await productsDatabase.checkVariantAvailability(
+      productId,
+      size
+    );
+
+    if (!isAvailable) {
+      throw new Error("Tamanho não disponível");
+    }
+
+    return {
+      available: true,
+      deadline:
+        product.stockType === "onDemand"
+          ? product.orderInfo.orderDeadline
+          : null,
+      estimatedDelivery:
+        product.stockType === "onDemand"
+          ? product.orderInfo.estimatedDelivery
+          : "1-5 dias úteis",
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message,
+    };
+  }
+};
+
 const getDeliveryInfo = (productId) => {
   return productsDatabase.getDeliveryInfo(productId);
 };
 
 const createOrder = async (orderData) => {
   if (!orderData.items || orderData.items.length === 0) {
-    throw new Error("Order must have at least one item");
+    return {
+      success: false,
+      error: "O pedido deve ter pelo menos um item",
+    };
   }
 
   if (
@@ -45,7 +97,10 @@ const createOrder = async (orderData) => {
     !orderData.ist_id ||
     !orderData.campus
   ) {
-    throw new Error("Required fields missing: name, email, ist_id, and campus");
+    return {
+      success: false,
+      error: "Campos obrigatórios em falta: nome, email, ist_id e campus",
+    };
   }
 
   if (!orderData.total_amount) {
@@ -55,8 +110,57 @@ const createOrder = async (orderData) => {
     );
   }
 
-  const orderId = await ordersDatabase.createOrder(orderData);
-  return orderId;
+  const availabilityChecks = await Promise.all(
+    orderData.items.map(async (item) => {
+      const availability = await checkProductAvailability(
+        item.product_id,
+        item.size
+      );
+      return {
+        ...availability,
+        item: item,
+      };
+    })
+  );
+
+  const unavailableItems = availabilityChecks.filter(
+    (check) => !check.available
+  );
+  if (unavailableItems.length > 0) {
+    const errorMessages = unavailableItems
+      .map(
+        (item) => `${item.item.product_id} (${item.item.size}): ${item.error}`
+      )
+      .join(", ");
+
+    return {
+      success: false,
+      error: errorMessages,
+      unavailableItems: unavailableItems.map((item) => ({
+        productId: item.productId,
+        size: item.size,
+        reason: item.reason,
+      })),
+    };
+  }
+
+  try {
+    const orderId = await ordersDatabase.createOrder(orderData);
+
+    return {
+      success: true,
+      orderId,
+      estimatedDelivery: availabilityChecks.some((item) => item.deadline)
+        ? "Conforme prazo informado no produto"
+        : "1-5 dias úteis",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: "Erro ao criar pedido",
+      details: error.message,
+    };
+  }
 };
 
 const getAllOrders = async () => {

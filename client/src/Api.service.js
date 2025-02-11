@@ -74,6 +74,21 @@ export const fetchProducts = async () => {
   }
 };
 
+export const fetchAvailableProducts = async () => {
+  try {
+    const products = await fetchProducts();
+
+    return products.filter((product) => {
+      let date = new Date();
+      let deadline = new Date(product.orderInfo.orderDeadline);
+
+      return deadline > date && product.visible;
+    });
+  } catch (error) {
+    console.error("Failed to fetch available products:", error);
+  }
+};
+
 export const fetchProductsByType = async (type) => {
   try {
     const products = await apiCall(`/api/store/products/type/${type}`);
@@ -113,16 +128,14 @@ export const createOrder = async (orderData) => {
 
     const responseData = await response.json();
 
-    if (!response.ok) {
-      throw new Error(
-        responseData.error || `HTTP error! status: ${response.status}`
-      );
+    if (!response.ok || responseData.error) {
+      return { error: responseData.error || "Erro ao criar encomenda" };
     }
 
     return responseData;
   } catch (error) {
     console.error("Failed to create order:", error);
-    throw error;
+    return { error: error.message };
   }
 };
 

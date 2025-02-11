@@ -3,7 +3,7 @@ import { FaRegBell } from "react-icons/fa";
 import { Container, Alert, Row, Col } from "react-bootstrap";
 import ProductCard from "../components/shopPage/ProductCard";
 import LoadSpinner from "../hooks/loadSpinner";
-import { fetchProducts } from "../Api.service";
+import { fetchAvailableProducts } from "../Api.service";
 
 const StorePage = () => {
   const [products, setProducts] = useState([]);
@@ -14,13 +14,9 @@ const StorePage = () => {
   useEffect(() => {
     const loadProducts = async () => {
       try {
-        const data = await fetchProducts();
+        const data = await fetchAvailableProducts();
 
-        const visibleProducts = data.filter(
-          (product) => product.visible !== false
-        );
-
-        setProducts(visibleProducts);
+        setProducts(data);
       } catch (err) {
         setError(err.message || "Erro ao carregar produtos");
       } finally {
